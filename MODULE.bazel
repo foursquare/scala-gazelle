@@ -8,3 +8,10 @@ use_repo(
     "com_github_emirpasic_gods",
     "com_github_smacker_go_tree_sitter",
 )
+
+# Patch in a cc_library for some header files needed to build go-tree-sitter; see
+# https://github.com/bazelbuild/rules_python/issues/2573 for details.
+go_deps.module_override(
+    patches = ["//:tree-sitter_cdeps.patch"],
+    path = "github.com/smacker/go-tree-sitter",
+)
