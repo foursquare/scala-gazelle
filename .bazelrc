@@ -1,0 +1,36 @@
+# Many or most of these settings come at the recommendation of
+# https://docs.aspect.build/guides/bazelrc/ -- look there for more information
+# about why they are enabled.
+
+startup --host_jvm_args=-DBAZEL_TRACK_SOURCE_DIRECTORIES=1
+startup --max_idle_secs=86400  # 24h max idle
+
+common --enable_platform_specific_config
+# The dump will be written to `<output_base>/<invocation_id>.heapdump.hprof`.
+# Docs: https://bazel.build/reference/command-line-reference#flag--heap_dump_on_oom
+common --heap_dump_on_oom
+common --incompatible_allow_tags_propagation
+common --incompatible_disallow_empty_glob
+
+build --incompatible_default_to_explicit_init_py
+build --incompatible_strict_action_env
+build --nobuild_runfile_links
+build --noexperimental_check_external_repository_files
+build --noexperimental_check_output_files
+build --nolegacy_external_runfiles
+build --reuse_sandbox_directories
+build --sandbox_default_allow_network=false
+build --show_result=20
+
+test --incompatible_exclusive_test_sandboxed
+test --test_output=errors
+test --test_verbose_timeout_warnings
+
+# Debugging flags, uncomment as needed
+# build --sandbox_debug
+# build --toolchain_resolution_debug=.*  # https://bazel.build/docs/toolchains#debugging-toolchains
+# build --verbose_failures
+# test --nocache_test_results
+# test --test_output=all
+
+try-import %workspace%/.bazelrc.user

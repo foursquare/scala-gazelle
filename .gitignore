@@ -23,3 +23,10 @@ go.work.sum
 
 # env file
 .env
+
+# user-specific bazel settings, if desired
+.bazelrc.user
+
+# other bazel things
+/bazel-*
+/MODULE.bazel.lock
