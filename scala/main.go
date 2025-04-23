@@ -11,7 +11,7 @@ import (
 	"runtime/pprof"
 	"strings"
 
-	"foursquare/gazelle/scala"
+	"github.com/foursquare/scala-gazelle/scala"
 )
 
 // Container for file path arguments

@@ -13,8 +13,8 @@ import (
 
 	"github.com/emirpasic/gods/sets/treeset"
 
-	"foursquare/gazelle/jvm"
-	"foursquare/gazelle/parse"
+	"github.com/foursquare/scala-gazelle/jvm"
+	"github.com/foursquare/scala-gazelle/parse"
 )
 
 const (

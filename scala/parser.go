@@ -13,7 +13,7 @@ import (
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/scala"
 
-	"foursquare/gazelle/parse"
+	"github.com/foursquare/scala-gazelle/parse"
 )
 
 // Parser originally modelled off Aspect's Kotlin parser here:
