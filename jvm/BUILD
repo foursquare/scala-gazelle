@@ -1,4 +1,4 @@
-load("@rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "jvm",
@@ -10,10 +10,10 @@ go_library(
     importpath = "github.com/foursquare/scala-gazelle/jvm",
     visibility = ["//visibility:public"],
     deps = [
+        "@bazel_gazelle//config",
+        "@bazel_gazelle//label",
+        "@bazel_gazelle//resolve",
+        "@bazel_gazelle//rule",
         "@com_github_emirpasic_gods//sets/treeset",
-        "@gazelle//config",
-        "@gazelle//label",
-        "@gazelle//resolve",
-        "@gazelle//rule",
     ],
 )

@@ -1,4 +1,4 @@
-load("@rules_go//go:def.bzl", "go_binary", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 
 go_library(
     name = "scala",
@@ -13,15 +13,15 @@ go_library(
     deps = [
         "//jvm",
         "//parse",
+        "@bazel_gazelle//config",
+        "@bazel_gazelle//label",
+        "@bazel_gazelle//language",
+        "@bazel_gazelle//repo",
+        "@bazel_gazelle//resolve",
+        "@bazel_gazelle//rule",
         "@com_github_emirpasic_gods//sets/treeset",
         "@com_github_smacker_go_tree_sitter//:go-tree-sitter",
         "@com_github_smacker_go_tree_sitter//scala",
-        "@gazelle//config",
-        "@gazelle//label",
-        "@gazelle//language",
-        "@gazelle//repo",
-        "@gazelle//resolve",
-        "@gazelle//rule",
     ],
 )
 
