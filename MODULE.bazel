@@ -1,17 +1,21 @@
 bazel_dep(name = "gazelle", version = "0.43.0", repo_name = "bazel_gazelle")
 bazel_dep(name = "rules_go", version = "0.54.0", repo_name = "io_bazel_rules_go")
 
+# Picks up a fix to have rules_go propagate header files as transitive deps, which
+# removes the need to patch go-tree-sitter's generated BUILD files in order to compile.
+# Once this change lands in a mainline rules_go release (presumably in either 0.54.2 or
+# 0.55.0), we can upgrade and this override can go away.
+archive_override(
+    module_name = "rules_go",
+    sha256 = "7ddd5d96f7f707fe7454d2767f5cbcb05d1064c1f8e67d833c8651b5d42f7537",
+    strip_prefix = "rules_go-393faea31d43012fbb7887dfbddb869cb5cf58f5",
+    url = "https://github.com/bazel-contrib/rules_go/archive/393faea31d43012fbb7887dfbddb869cb5cf58f5.zip",
+)
+
 go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
 go_deps.from_file(go_mod = "//:go.mod")
 use_repo(
     go_deps,
     "com_github_emirpasic_gods",
     "com_github_smacker_go_tree_sitter",
-)
-
-# Patch in a cc_library for some header files needed to build go-tree-sitter; see
-# https://github.com/bazelbuild/rules_python/issues/2573 for details.
-go_deps.module_override(
-    patches = ["//:tree-sitter_cdeps.patch"],
-    path = "github.com/smacker/go-tree-sitter",
 )
