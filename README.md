@@ -5,6 +5,59 @@ A Scala code parser and [Gazelle](https://github.com/bazelbuild/bazel-gazelle) p
 
 TODO
 
+### Installation instructions
+
+Create new `gazelle_binary` and `gazelle` targets in your root `BUILD`/`BUILD.bazel` file (or add the Scala language
+plugin to an existing `gazelle_binary` if you wish):
+
+```starlark
+gazelle_binary(
+    name = "gazelle_bin",
+    languages = [
+        "@com_github_foursquare_scala_gazelle//scala",
+    ],
+)
+
+gazelle(
+    name = "gazelle",
+    args = [
+        # "-scala_rules_scala_repo_name=io_bazel_rules_scala", # required with older versions of rules_scala
+        # "-scala_parsing_cache_file=...", # beneficial for large repos; specify a .json or .json.gz file path
+    ],
+    gazelle = ":gazelle_bin",
+)
+```
+
+#### Bzlmod
+
+TODO:
+  - update to next mainline rules_go release, which fixes the need to patch go-tree-sitter (see
+    https://github.com/bazel-contrib/bazel-gazelle/issues/2059 for details)
+  - upload to Bazel Central Registry
+
+#### WORKSPACE
+
+```starlark
+SCALA_GAZELLE_VERSION = "fd9ef55674f961f05f339ca576027f706b0f3859"
+
+SCALA_GAZELLE_SHA = "b45ce08742058431f20326cbfe59d240a1f4a644733bfd273f4c35865013b795"
+
+http_archive(
+    name = "com_github_foursquare_scala_gazelle",
+    strip_prefix = "scala-gazelle-{}".format(SCALA_GAZELLE_VERSION),
+    sha256 = SCALA_GAZELLE_SHA,
+    url = "https://github.com/foursquare/scala-gazelle/archive/{}.zip".format(SCALA_GAZELLE_VERSION),
+)
+
+load("@com_github_foursquare_scala_gazelle//:deps.bzl", "scala_gazelle_deps")
+
+scala_gazelle_deps()
+```
+
+Note that with `WORKSPACE` being order dependent, if you get errors building the gazelle binary you may need to move
+`scala_gazelle_deps()` earlier in the file to ensure the proper dependency versioning, especially if you use other
+Gazelle language plugins.
+
 ## Maintainer notes
 
 ### Managing go dependencies
