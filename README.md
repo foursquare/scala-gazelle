@@ -14,7 +14,7 @@ plugin to an existing `gazelle_binary` if you wish):
 gazelle_binary(
     name = "gazelle_bin",
     languages = [
-        "@com_github_foursquare_scala_gazelle//scala",
+        "@scala_gazelle//scala",
     ],
 )
 
@@ -30,10 +30,24 @@ gazelle(
 
 #### Bzlmod
 
-TODO:
-  - update to next mainline rules_go release, which fixes the need to patch go-tree-sitter (see
-    https://github.com/bazel-contrib/bazel-gazelle/issues/2059 for details)
-  - upload to Bazel Central Registry
+TODO: scala_gazelle is not currently published to the Bazel Central Registry. In the meantime, Bzlmod can still be used
+via the --override_module flag.
+
+```starlark
+bazel_dep(name = "scala_gazelle", version = "0.0.0")
+```
+
+Note that building scala_gazelle requires either a rules_go version later than 54.1, or a patch to the go-tree-sitter
+module. If upgrading rules_go is not an option for you, you will additionally require the following override in your
+`MODULE.bazel` file:
+
+```starlark
+go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
+go_deps.module_override(
+    patches = ["@scala_gazelle//:tree-sitter_cdeps.patch"],
+    path = "github.com/smacker/go-tree-sitter",
+)
+```
 
 #### WORKSPACE
 
@@ -43,13 +57,13 @@ SCALA_GAZELLE_VERSION = "fd9ef55674f961f05f339ca576027f706b0f3859"
 SCALA_GAZELLE_SHA = "b45ce08742058431f20326cbfe59d240a1f4a644733bfd273f4c35865013b795"
 
 http_archive(
-    name = "com_github_foursquare_scala_gazelle",
+    name = "scala_gazelle",
     strip_prefix = "scala-gazelle-{}".format(SCALA_GAZELLE_VERSION),
     sha256 = SCALA_GAZELLE_SHA,
     url = "https://github.com/foursquare/scala-gazelle/archive/{}.zip".format(SCALA_GAZELLE_VERSION),
 )
 
-load("@com_github_foursquare_scala_gazelle//:deps.bzl", "scala_gazelle_deps")
+load("@scala_gazelle//:deps.bzl", "scala_gazelle_deps")
 
 scala_gazelle_deps()
 ```
@@ -66,7 +80,8 @@ TL;DR:
   1. `go.mod` may be updated by hand, or preferably via `bazel run @io_bazel_rules_go//go get example.com/pkg@version`.
   2. Run `bazel run @io_bazel_rules_go//go -- mod tidy` to update indirect deps and `go.sum`.
   3. Run `bazel mod tidy` to ensure any changes are reflected in the `go_deps` `use_repo` declaration in `MODULE.bazel`.
-  4. Run `bazel run //:gazelle` to update `BUILD` files as needed.
+  4. Run `bazel run //:gazelle_update_repos` to update the `scala_gazelle_deps` macro in `deps.bzl`
+  5. Run `bazel run //:gazelle` to update `BUILD` files as needed.
 
 For more details, see the upstream docs from `rules_go` [here](https://github.com/bazel-contrib/rules_go/blob/v0.54.0/docs/go/core/bzlmod.md).
 
