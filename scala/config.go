@@ -18,6 +18,23 @@ import (
 )
 
 const (
+	// By default, the scala language plugin generates one target per source directory,
+	// and will not aggregate source files from sub-directories. Setting
+	// ScalaAllowRecursiveTargets to true will have the plugin recurse into those sub-
+	// directories which don't have their own BUILD files to look for additional source
+	// files, which corresponds more closely with how Bazel thinks about package boundaries
+	// (see https://bazel.build/versions/8.2.0/concepts/build-ref for details).
+	//
+	// This effectively allows Gradle-style module targets, where a single BUILD file at
+	// the root of a source tree contains aggregate targets for the entire tree. Such
+	// patterns are generally discouraged under Bazel as they result in significantly worse
+	// build performance, but may still be necessary or desired in some circumstances.
+	//
+	// Accepted values are true or false.
+	//
+	// Defaults to false.
+	ScalaAllowRecursiveTargets = "scala_allow_recursive_targets"
+
 	// ScalaTestFileSuffixes indicates within a test directory which files are test
 	// classes vs utility classes, based on their basename. It should be set up to match
 	// the value used for the test rules' suffixes attribute if applicable, with the
@@ -88,6 +105,7 @@ func (t scalaTestFrameworkType) String() string {
 
 // ScalaConfig represents a config extension for a specific Bazel package.
 type ScalaConfig struct {
+	AllowRecursiveTargets bool
 	ScalaTestFileSuffixes *[]string
 	ScalaTestKind         string
 	WarnTestRuleMismatch  bool
@@ -95,6 +113,7 @@ type ScalaConfig struct {
 
 func NewScalaConfig() *ScalaConfig {
 	return &ScalaConfig{
+		AllowRecursiveTargets: false,
 		ScalaTestFileSuffixes: &DEFAULT_SCALA_TEST_FILE_SUFFIXES,
 		ScalaTestKind:         SCALA_TEST_KIND,
 		WarnTestRuleMismatch:  true,
@@ -105,6 +124,7 @@ func NewScalaConfig() *ScalaConfig {
 // current ScalaConfig.
 func (c *ScalaConfig) NewChild() *ScalaConfig {
 	return &ScalaConfig{
+		AllowRecursiveTargets: c.AllowRecursiveTargets,
 		ScalaTestFileSuffixes: c.ScalaTestFileSuffixes,
 		ScalaTestKind:         c.ScalaTestKind,
 		WarnTestRuleMismatch:  c.WarnTestRuleMismatch,
@@ -277,6 +297,7 @@ func (sc *ScalaConfigurer) CheckFlags(fs *flag.FlagSet, c *config.Config) error 
 func (sc *ScalaConfigurer) KnownDirectives() []string {
 	return append(
 		sc.JvmConfigurer.KnownDirectives(),
+		ScalaAllowRecursiveTargets,
 		ScalaTestFileSuffixes,
 		ScalaTestFramework,
 		ScalaWarnTestRuleMismatch,
@@ -297,6 +318,20 @@ func (sc *ScalaConfigurer) Configure(c *config.Config, rel string, f *rule.File)
 	if f != nil {
 		for _, d := range f.Directives {
 			switch d.Key {
+			case ScalaAllowRecursiveTargets:
+				switch d.Value {
+				case "true":
+					scalaConfig.AllowRecursiveTargets = true
+				case "false":
+					scalaConfig.AllowRecursiveTargets = false
+				default:
+					log.Fatalf(
+						"Invalid config for %s directive. Expected 'true' or 'false' but got '%v'\n",
+						ScalaAllowRecursiveTargets,
+						d.Value,
+					)
+				}
+
 			case ScalaTestFileSuffixes:
 				newSuffixes := strings.Split(d.Value, ",")
 				scalaConfig.ScalaTestFileSuffixes = &newSuffixes
