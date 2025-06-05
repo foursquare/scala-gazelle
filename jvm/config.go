@@ -198,4 +198,8 @@ func (jc *JvmConfigurer) Configure(c *config.Config, rel string, f *rule.File) {
 			jvmConfig.setMavenInstall(c.RepoRoot, mavenInstallFile)
 		}
 	}
+
+	if jvmConfig.MavenInstall == nil {
+		jvmConfig.setMavenInstall(c.RepoRoot, DEFAULT_MAVEN_INSTALL_FILE)
+	}
 }
