@@ -23,4 +23,9 @@ var (
 	DEFAULT_VISIBILITY = []string{
 		"//:__subpackages__",
 	}
+
+	KNOWN_BUILD_FILENAMES = []string{
+		"BUILD",
+		"BUILD.bazel",
+	}
 )

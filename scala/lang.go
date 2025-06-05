@@ -2,7 +2,9 @@ package scala
 
 import (
 	"fmt"
+	"io/fs"
 	"log"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -153,6 +155,132 @@ func (l *scalaLang) Loads() []rule.LoadInfo {
 	}
 }
 
+type srcFiles struct {
+	scalaSrcs     *[]string
+	scalaTestSrcs *[]string
+	javaSrcs      *[]string
+}
+
+func emptySrcFiles() *srcFiles {
+	return &srcFiles{
+		scalaSrcs:     &[]string{},
+		scalaTestSrcs: &[]string{},
+		javaSrcs:      &[]string{},
+	}
+}
+
+func (s *srcFiles) allSrcs(includeTests bool) []string {
+	allSrcs := append(*s.scalaSrcs, *s.javaSrcs...)
+	if includeTests {
+		return append(allSrcs, *s.scalaTestSrcs...)
+	} else {
+		return allSrcs
+	}
+}
+
+func (s *srcFiles) hasScalaFiles() bool {
+	return len(*s.scalaSrcs) > 0 || len(*s.scalaTestSrcs) > 0
+}
+
+func (s *srcFiles) hasTests() bool {
+	return len(*s.scalaTestSrcs) > 0
+}
+
+func (s *srcFiles) maybeAddSrc(scalaConfig *ScalaConfig, path string) {
+	pathExt := filepath.Ext(path)
+
+	if pathExt == SCALA_EXT {
+		if scalaConfig.IsScalaTestFile(path) {
+			*s.scalaTestSrcs = append(*s.scalaTestSrcs, path)
+		} else {
+			*s.scalaSrcs = append(*s.scalaSrcs, path)
+		}
+
+	} else if pathExt == JAVA_EXT {
+		*s.javaSrcs = append(*s.javaSrcs, path)
+	}
+}
+
+func (s *srcFiles) addAll(otherSrcs *srcFiles) {
+	*s.scalaSrcs = append(*s.scalaSrcs, *otherSrcs.scalaSrcs...)
+	*s.scalaTestSrcs = append(*s.scalaTestSrcs, *otherSrcs.scalaTestSrcs...)
+	*s.javaSrcs = append(*s.javaSrcs, *otherSrcs.javaSrcs...)
+}
+
+// isBazelPackage determines if the directory is a Bazel package by probing for
+// the existence of a known BUILD file name.
+func isBazelPackage(dir string) bool {
+	for _, buildFilename := range KNOWN_BUILD_FILENAMES {
+		path := filepath.Join(dir, buildFilename)
+		if _, err := os.Stat(path); err == nil {
+			return true
+		}
+	}
+
+	return false
+}
+
+// Simplified implementation taken from rules_python:
+// https://github.com/bazel-contrib/rules_python/blob/02198f622ee1b496111bef6b880ea35e0d24b600/gazelle/python/generate.go#L149
+func crawlAndFilterSubdirSrcs(
+	scalaConfig *ScalaConfig,
+	parentDir string,
+	subdirs []string,
+) *srcFiles {
+	srcs := emptySrcFiles()
+
+	// boundaryPackages represents child Bazel packages that are used as a
+	// boundary to stop processing under that tree.
+	boundaryPackages := treeset.NewWithStringComparator()
+
+	for _, dir := range subdirs {
+		dirPath := filepath.Join(parentDir, dir)
+
+		err := filepath.WalkDir(
+			dirPath,
+			func(path string, entry fs.DirEntry, err error) error {
+				if err != nil {
+					return err
+				}
+
+				// Ignore the path if it crosses any boundary package. Walking
+				// the tree is still important because subsequent paths can
+				// represent files that have not crossed any boundaries.
+				boundaryPackagesIter := boundaryPackages.Iterator()
+				for boundaryPackagesIter.Next() {
+					boundaryPackage := boundaryPackagesIter.Value().(string)
+					if strings.HasPrefix(path, boundaryPackage) {
+						return nil
+					}
+				}
+
+				if entry.IsDir() {
+					if isBazelPackage(path) {
+						boundaryPackages.Add(path)
+						return fs.SkipDir
+					}
+
+				} else {
+					relPath, err := filepath.Rel(parentDir, path)
+					if err != nil {
+						return err
+					}
+
+					srcs.maybeAddSrc(scalaConfig, relPath)
+				}
+
+				return nil
+			},
+		)
+
+		if err != nil {
+			log.Fatalf("Error while iterating directory %s: %v\n", dirPath, err)
+		}
+	}
+
+	return srcs
+}
+
 // GenerateRules extracts build metadata from source files in a directory.
 // GenerateRules is called in each directory where an update is requested
 // in depth-first post-order.
@@ -167,15 +295,39 @@ func (l *scalaLang) Loads() []rule.LoadInfo {
 // Any non-fatal errors this function encounters should be logged using
 // log.Print.
 func (l *scalaLang) GenerateRules(args language.GenerateArgs) language.GenerateResult {
-	// TODO(jacob): We currently ignore directories without BUILD files, should we actually
-	//		be recursing into sub-directories to find otherwise orphaned source files? This
-	//		is what, e.g., the Python gazelle plugin does, which corresponds to how Bazel
-	//		thinks about package boundaries.
-	if args.File == nil || args.RegularFiles == nil || len(args.RegularFiles) == 0 {
+	scalaConfig := ScalaConfigForArgs(args)
+
+	if args.File == nil && scalaConfig.AllowRecursiveTargets {
+		// This directory is not itself a Bazel package and is handled when processing a
+		// Nothing to see here.
 		return language.GenerateResult{}
 	}
 
-	scalaConfig := ScalaConfigForArgs(args)
+	srcs := emptySrcFiles()
+	for _, filename := range args.RegularFiles {
+		srcs.maybeAddSrc(scalaConfig, filename)
+	}
+
+	if srcs.hasScalaFiles() && args.File == nil && !scalaConfig.AllowRecursiveTargets {
+		log.Fatalf(
+			"Found scala sources in '%s' without an accompanying build file, and gazelle:%s "+
+				"is false. Either add a build file in '%s' or if these sources are meant to "+
+				"belong to a parent directory's build file, it should set '# gazelle:%s true'.",
+			args.Rel,
+			ScalaAllowRecursiveTargets,
+			args.Rel,
+			ScalaAllowRecursiveTargets,
+		)
+
+	} else if args.File != nil && scalaConfig.AllowRecursiveTargets {
+		recursiveSrcs := crawlAndFilterSubdirSrcs(scalaConfig, args.Dir, args.Subdirs)
+		srcs.addAll(recursiveSrcs)
+
+	}
+
+	if !srcs.hasScalaFiles() {
+		return language.GenerateResult{}
+	}
 
 	ruleName := filepath.Base(args.Rel)
 	ruleKind := SCALA_LIB_KIND
@@ -191,55 +343,34 @@ func (l *scalaLang) GenerateRules(args language.GenerateArgs) language.GenerateR
 		}
 	}
 
-	warnedAboutTestConflict := !scalaConfig.WarnTestRuleMismatch
-	scalaSrcs := make([]string, 0, len(args.RegularFiles))
-	allSrcs := make([]string, 0, len(args.RegularFiles))
-	for _, filename := range args.RegularFiles {
-		filepathExt := filepath.Ext(filename)
+	if srcs.hasTests() {
+		if existingKind == nil || scalaConfig.IsScalaTestKind(args.Config, *existingKind) {
+			ruleKind = scalaConfig.ScalaTestKind
 
-		if filepathExt == SCALA_EXT {
-			allSrcs = append(allSrcs, filename)
-			scalaSrcs = append(scalaSrcs, filename)
-
-			if scalaConfig.IsScalaTestFile(filename) {
-				if existingKind != nil && !scalaConfig.IsScalaTestKind(args.Config, *existingKind) {
-					if !warnedAboutTestConflict {
-						log.Printf(
-							"WARN: Package '%s' contains a conflicting rule of kind '%s', "+
-								"but appears to also contain test files. If you are adding a "+
-								"new test file, please consider moving it to another directory "+
-								"to avoid mixing library and test code, or manually update the "+
-								"rule to the appropriate test kind so the tests will run. If "+
-								"not, you may consider changing the file names to not match "+
-								"against the configured test file suffixes (%v) or setting "+
-								"'# gazelle:%s false' in its build file to make this warning "+
-								"go away.",
-							args.Rel,
-							*existingKind,
-							*scalaConfig.ScalaTestFileSuffixes,
-							ScalaWarnTestRuleMismatch,
-						)
-						warnedAboutTestConflict = true
-					}
-
-				} else {
-					ruleKind = scalaConfig.ScalaTestKind
-				}
-			}
-
-		} else if filepathExt == JAVA_EXT {
-			allSrcs = append(allSrcs, filename)
+		} else if scalaConfig.WarnTestRuleMismatch {
+			log.Printf(
+				"WARN: Package '%s' contains a conflicting rule of kind '%s', "+
+					"but appears to also contain test files. If you are adding a "+
+					"new test file, please consider moving it to another directory "+
+					"to avoid mixing library and test code, or manually update the "+
+					"rule to the appropriate test kind so the tests will run. If "+
+					"not, you may consider changing the file names to not match "+
+					"against the configured test file suffixes (%v) or setting "+
+					"'# gazelle:%s false' in its build file to make this warning "+
+					"go away.",
+				args.Rel,
+				*existingKind,
+				*scalaConfig.ScalaTestFileSuffixes,
+				ScalaWarnTestRuleMismatch,
+			)
 		}
-	}
-
-	if len(scalaSrcs) == 0 {
-		return language.GenerateResult{}
 	}
 
 	deps := treeset.NewWithStringComparator()
 	l.currentExportedSymbols = treeset.NewWithStringComparator()
-	for _, filename := range scalaSrcs {
-		absPath := filepath.Join(args.Dir, filename)
+
+	parseFile := func(path string) {
+		absPath := filepath.Join(args.Dir, path)
 		parseResult, errs := l.parser.ParseFile(absPath)
 
 		if errs != nil && len(errs) != 0 {
@@ -271,8 +402,15 @@ func (l *scalaLang) GenerateRules(args language.GenerateArgs) language.GenerateR
 		l.currentExportedSymbols.Add(parseResult.Package)
 	}
 
+	for _, path := range *srcs.scalaSrcs {
+		parseFile(path)
+	}
+	for _, path := range *srcs.scalaTestSrcs {
+		parseFile(path)
+	}
+
 	scalaRule := rule.NewRule(ruleKind, ruleName)
-	scalaRule.SetAttr("srcs", allSrcs)
+	scalaRule.SetAttr("srcs", srcs.allSrcs(true))
 	scalaRule.SetAttr("visibility", DEFAULT_VISIBILITY)
 
 	if ruleKind == SCALA_JUNIT_TEST_KIND {
