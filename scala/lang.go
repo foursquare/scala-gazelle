@@ -297,7 +297,7 @@ func crawlAndFilterSubdirSrcs(
 func (l *scalaLang) GenerateRules(args language.GenerateArgs) language.GenerateResult {
 	scalaConfig := ScalaConfigForArgs(args)
 
-	if args.File == nil && scalaConfig.AllowRecursiveTargets {
+	if args.File == nil && scalaConfig.InferRecursiveModules {
 		// This directory is not itself a Bazel package and is handled when processing a
 		// Nothing to see here.
 		return language.GenerateResult{}
@@ -308,18 +308,18 @@ func (l *scalaLang) GenerateRules(args language.GenerateArgs) language.GenerateR
 		srcs.maybeAddSrc(scalaConfig, filename)
 	}
 
-	if srcs.hasScalaFiles() && args.File == nil && !scalaConfig.AllowRecursiveTargets {
+	if srcs.hasScalaFiles() && args.File == nil && !scalaConfig.InferRecursiveModules {
 		log.Fatalf(
 			"Found scala sources in '%s' without an accompanying build file, and gazelle:%s "+
 				"is false. Either add a build file in '%s' or if these sources are meant to "+
 				"belong to a parent directory's build file, it should set '# gazelle:%s true'.",
 			args.Rel,
-			ScalaAllowRecursiveTargets,
+			ScalaInferRecursiveModules,
 			args.Rel,
-			ScalaAllowRecursiveTargets,
+			ScalaInferRecursiveModules,
 		)
 
-	} else if args.File != nil && scalaConfig.AllowRecursiveTargets {
+	} else if args.File != nil && scalaConfig.InferRecursiveModules {
 		recursiveSrcs := crawlAndFilterSubdirSrcs(scalaConfig, args.Dir, args.Subdirs)
 		srcs.addAll(recursiveSrcs)
 
