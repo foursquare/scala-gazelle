@@ -299,6 +299,14 @@ func (sc *ScalaConfigurer) Configure(c *config.Config, rel string, f *rule.File)
 			switch d.Key {
 			case ScalaTestFileSuffixes:
 				newSuffixes := strings.Split(d.Value, ",")
+
+				for i, newSuffix := range newSuffixes {
+					newSuffix = strings.TrimSpace(newSuffix)
+					if newSuffix != "" {
+						newSuffixes[i] = newSuffix
+					}
+				}
+
 				scalaConfig.ScalaTestFileSuffixes = &newSuffixes
 
 			case ScalaTestFramework:
