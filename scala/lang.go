@@ -25,15 +25,19 @@ type scalaLang struct {
 	*ScalaConfigurer
 	language.FinishableLanguage
 
-	parser                 parse.Parser[ParseResult]
-	currentExportedSymbols *treeset.Set
+	parser                     parse.Parser[ParseResult]
+	seenScalaPackages          *treeset.Set
+	currentExportedSymbols     *treeset.Set
+	currentTestExportedSymbols *treeset.Set
 }
 
 // NewLanguage is called by Gazelle to install this language extension in a binary.
 func NewLanguage() language.Language {
 	lang := scalaLang{
-		parser:                 nil, // populated during ScalaConfigurer's CheckFlags
-		currentExportedSymbols: nil,
+		parser:                     nil, // populated during ScalaConfigurer's CheckFlags
+		seenScalaPackages:          treeset.NewWithStringComparator(),
+		currentExportedSymbols:     nil,
+		currentTestExportedSymbols: nil,
 	}
 
 	lang.ScalaConfigurer = NewScalaConfigurer(&lang)
@@ -155,6 +159,7 @@ func (l *scalaLang) Loads() []rule.LoadInfo {
 	}
 }
 
+// NOTE(jacob): We don't handle java test files. It's possible we should?
 type srcFiles struct {
 	scalaSrcs     *[]string
 	scalaTestSrcs *[]string
@@ -190,7 +195,13 @@ func (s *srcFiles) maybeAddSrc(scalaConfig *ScalaConfig, path string) {
 	pathExt := filepath.Ext(path)
 
 	if pathExt == SCALA_EXT {
-		if scalaConfig.IsScalaTestFile(path) {
+		// Any inferred maven directory layout takes precedence over inferring library vs
+		// test code based on file suffix.
+		if strings.HasPrefix(path, MAVEN_LAYOUT_TEST_PREFIX) {
+			*s.scalaTestSrcs = append(*s.scalaTestSrcs, path)
+		} else if strings.HasPrefix(path, MAVEN_LAYOUT_MAIN_PREFIX) {
+			*s.scalaSrcs = append(*s.scalaSrcs, path)
+		} else if scalaConfig.IsScalaTestFile(path) {
 			*s.scalaTestSrcs = append(*s.scalaTestSrcs, path)
 		} else {
 			*s.scalaSrcs = append(*s.scalaSrcs, path)
@@ -343,7 +354,7 @@ func (l *scalaLang) GenerateRules(args language.GenerateArgs) language.GenerateR
 		}
 	}
 
-	if srcs.hasTests() {
+	if srcs.hasTests() && !scalaConfig.InferRecursiveModules {
 		if existingKind == nil || scalaConfig.IsScalaTestKind(args.Config, *existingKind) {
 			ruleKind = scalaConfig.ScalaTestKind
 
@@ -366,10 +377,14 @@ func (l *scalaLang) GenerateRules(args language.GenerateArgs) language.GenerateR
 		}
 	}
 
-	deps := treeset.NewWithStringComparator()
-	l.currentExportedSymbols = treeset.NewWithStringComparator()
+	generatingTwoRules := srcs.hasTests() && scalaConfig.InferRecursiveModules
 
-	parseFile := func(path string) {
+	deps := treeset.NewWithStringComparator()
+	testDeps := treeset.NewWithStringComparator()
+	l.currentExportedSymbols = treeset.NewWithStringComparator()
+	l.currentTestExportedSymbols = treeset.NewWithStringComparator()
+
+	parseFile := func(path string, isTest bool) {
 		absPath := filepath.Join(args.Dir, path)
 		parseResult, errs := l.parser.ParseFile(absPath)
 
@@ -384,42 +399,130 @@ func (l *scalaLang) GenerateRules(args language.GenerateArgs) language.GenerateR
 				fmt.Fprintf(&b, "%s\n", err)
 			}
 			log.Fatalf(b.String())
+
 		}
 
-		deps = deps.Union(parseResult.FullyQualifiedNames)
-		deps = deps.Union(parseResult.Imports)
+		if generatingTwoRules && isTest {
+			testDeps = testDeps.Union(parseResult.FullyQualifiedNames)
+			testDeps = testDeps.Union(parseResult.Imports)
+			testDeps.Add(parseResult.Package)
+		} else {
+			deps = deps.Union(parseResult.FullyQualifiedNames)
+			deps = deps.Union(parseResult.Imports)
+			if isTest {
+				deps.Add(parseResult.Package)
+			}
+		}
 
 		// TODO(jacob): Have our parsers just spit out fully qualified names so we don't
 		//		have to recreate them here.
 		symbolsIter := parseResult.ExportedSymbols.Iterator()
 		for symbolsIter.Next() {
 			symbol := symbolsIter.Value().(string)
-			l.currentExportedSymbols.Add(
-				fmt.Sprintf("%s.%s", parseResult.Package, symbol),
-			)
+			fullyQualifiedSymbol := fmt.Sprintf("%s.%s", parseResult.Package, symbol)
+			if generatingTwoRules && isTest {
+				l.currentTestExportedSymbols.Add(fullyQualifiedSymbol)
+			} else {
+				l.currentExportedSymbols.Add(fullyQualifiedSymbol)
+			}
 		}
 
-		l.currentExportedSymbols.Add(parseResult.Package)
+		// HACK(jacob): Generally we don't want to index the package of test targets: a
+		//		common pattern in jvm repos is to split source code and tests into separate
+		//		directories which share a package namespace, and if we index the package for
+		//		both of them we would trigger resolve conflicts users would have to manually
+		//		override via '# gazelle:resolve'.
+		//
+		//		However! It isn't always the case that source code and tests share a package
+		//		namespace -- our internal monorepo in fact hard bans split packages, and so
+		//		tests always live in a '.test' sub-package -- and in such cases we do in fact
+		//		want to index the test package to support test on test dependencies and package
+		//		shadowing.
+		//
+		//		This is a tricky impasse to resolve while trying to avoid explicit directive
+		//		configuration from users. The hack used here is simply to keep track of which
+		//		packages we've previously encountered and only index the package of test
+		//		targets if they aren't found.
+		//
+		//		This makes an unseemly assumption about Gazelle traversing directories
+		//		alphabetically, in which case it will process 'src' or 'main' directories
+		//		before 'test' directories. This is not documented behavior --
+		//		https://pkg.go.dev/github.com/bazelbuild/bazel-gazelle@v0.43.0/walk only
+		//		specifies a depth-first, post-order traversal -- but the underlying
+		//		implementation is based around https://pkg.go.dev/os#ReadDir, and so assuming
+		//		1. any directory arguments passed to gazelle are sorted, and 2. symlinks
+		//		affected by any '# gazelle:follow' usage don't break traversal order too badly,
+		//		this is generally the case.
+		//
+		//		In places where this assumption breaks down, it may be necessary for users to
+		//		specify '# gazelle:resolve' directives to fix the affected packages manually.
+		//
+		//    A less hacky but more restrictive solution would be to simply ban test on test
+		//		dependencies, which is generally a best practice regardless. However, without
+		//		informative error messages this can lead to confusing behavior for developers
+		//		where Gazelle silently not indexing test rules makes it seem like it isn't
+		//		working correctly. It seems reasonable to go with the hacky approach here and
+		//		revisit if it causes issues in practice.
+		if !isTest || !l.seenScalaPackages.Contains(parseResult.Package) {
+			l.currentExportedSymbols.Add(parseResult.Package)
+		}
+
+		l.seenScalaPackages.Add(parseResult.Package)
 	}
 
-	for _, path := range *srcs.scalaSrcs {
-		parseFile(path)
-	}
-	for _, path := range *srcs.scalaTestSrcs {
-		parseFile(path)
+	if scalaConfig.InferRecursiveModules {
+		for _, path := range *srcs.scalaSrcs {
+			parseFile(path, false)
+		}
+		for _, path := range *srcs.scalaTestSrcs {
+			parseFile(path, true)
+		}
+
+	} else {
+		for _, path := range *srcs.scalaSrcs {
+			parseFile(path, ruleKind == scalaConfig.ScalaTestKind)
+		}
+		for _, path := range *srcs.scalaTestSrcs {
+			parseFile(path, ruleKind == scalaConfig.ScalaTestKind)
+		}
+		if ruleKind == scalaConfig.ScalaTestKind {
+			deps = deps.Union(testDeps)
+			l.currentExportedSymbols = l.currentExportedSymbols.Union(l.currentTestExportedSymbols)
+			l.currentTestExportedSymbols = nil
+		}
 	}
 
 	scalaRule := rule.NewRule(ruleKind, ruleName)
-	scalaRule.SetAttr("srcs", srcs.allSrcs(true))
 	scalaRule.SetAttr("visibility", DEFAULT_VISIBILITY)
 
-	if ruleKind == SCALA_JUNIT_TEST_KIND {
-		scalaRule.SetAttr("suffixes", *scalaConfig.ScalaTestFileSuffixes)
+	generatedRules := []*rule.Rule{scalaRule}
+	imports := []interface{}{deps}
+
+	if scalaConfig.InferRecursiveModules && srcs.hasTests() {
+		scalaRule.SetAttr("srcs", srcs.allSrcs(false))
+
+		scalaTestRule := rule.NewRule(scalaConfig.ScalaTestKind, ruleName+"-tests")
+		scalaTestRule.SetAttr("srcs", *srcs.scalaTestSrcs)
+		scalaTestRule.SetAttr("visibility", DEFAULT_VISIBILITY)
+
+		if scalaConfig.ScalaTestKind == SCALA_JUNIT_TEST_KIND {
+			scalaTestRule.SetAttr("suffixes", *scalaConfig.ScalaTestFileSuffixes)
+		}
+
+		generatedRules = append(generatedRules, scalaTestRule)
+		imports = append(imports, testDeps)
+
+	} else {
+		scalaRule.SetAttr("srcs", srcs.allSrcs(true))
+
+		if ruleKind == SCALA_JUNIT_TEST_KIND {
+			scalaRule.SetAttr("suffixes", *scalaConfig.ScalaTestFileSuffixes)
+		}
 	}
 
 	return language.GenerateResult{
-		Gen:     []*rule.Rule{scalaRule},
-		Imports: []interface{}{deps},
+		Gen:     generatedRules,
+		Imports: imports,
 	}
 }
 
@@ -444,6 +547,8 @@ func (l *scalaLang) DoneGeneratingRules() {
 //	this rule define?" Essentially it returns a list of potential imports -- for scala,
 //	this is our parsed set of exported symbols.
 func (l *scalaLang) Imports(c *config.Config, r *rule.Rule, f *rule.File) []resolve.ImportSpec {
+	scalaConfig := ScalaConfigForConfig(c, f.Pkg)
+
 	ruleKind := r.Kind()
 	// TODO(jacob): Ban deps on test rules?
 	if !(ruleKind == SCALA_LIB_KIND ||
@@ -454,12 +559,19 @@ func (l *scalaLang) Imports(c *config.Config, r *rule.Rule, f *rule.File) []reso
 	}
 
 	exportedSymbols := l.currentExportedSymbols
-	l.currentExportedSymbols = nil
+	if scalaConfig.InferRecursiveModules && scalaConfig.IsScalaTestKind(c, ruleKind) {
+		exportedSymbols = l.currentTestExportedSymbols
+		l.currentTestExportedSymbols = nil
+	} else {
+		l.currentExportedSymbols = nil
+	}
+
 	if exportedSymbols == nil {
 		log.Printf(
-			"Package '%s' does not have exported symbols available, does it exist and "+
+			"Rule '%s:%s' does not have exported symbols available, does it exist and "+
 				"contain Scala source files?\n",
 			f.Pkg,
+			r.Name(),
 		)
 		return nil
 	}

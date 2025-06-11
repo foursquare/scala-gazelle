@@ -1,5 +1,10 @@
 package scala
 
+import (
+	"fmt"
+	"path/filepath"
+)
+
 const (
 	LANGUAGE_NAME = "scala"
 
@@ -28,4 +33,8 @@ var (
 		"BUILD",
 		"BUILD.bazel",
 	}
+
+	// https://maven.apache.org/guides/introduction/introduction-to-the-standard-directory-layout.html
+	MAVEN_LAYOUT_MAIN_PREFIX = fmt.Sprintf("%s%c", filepath.Join("src", "main"), filepath.Separator)
+	MAVEN_LAYOUT_TEST_PREFIX = fmt.Sprintf("%s%c", filepath.Join("src", "test"), filepath.Separator)
 )
