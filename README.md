@@ -76,7 +76,8 @@ Gazelle language plugins.
 
  - remove globs
  - add resolve directives for conflicts
- - must refactor to a single library and/or test taret per package
+ - must refactor to a single library and/or test target per package
+ - may need to rename existing rules, if they conflict with generation conventions
 
 ## Maintainer notes
 
