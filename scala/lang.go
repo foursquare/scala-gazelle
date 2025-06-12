@@ -362,7 +362,7 @@ func (l *scalaLang) parseFile(absPath string, isTest bool) (*treeset.Set, *trees
 	//		directory before the parent module directory), it may be necessary for users to
 	//		specify '# gazelle:resolve' directives to fix the affected packages manually.
 	//
-	//    A less hacky but more restrictive solution would be to simply ban test on test
+	//		A less hacky but more restrictive solution would be to simply ban test on test
 	//		dependencies, which is generally a best practice regardless. However, without
 	//		informative error messages this can lead to confusing behavior for developers
 	//		where Gazelle silently not indexing test rules makes it seem like it isn't
@@ -474,7 +474,7 @@ func (l *scalaLang) GenerateRules(args language.GenerateArgs) language.GenerateR
 	// TODO(jacob): There are many cases, such as the example above, where with some effort
 	//		we could identify the correct existing rule to match against and generate our
 	//		rules to match the existing naming rather than force users to conform to our
-	//    naming convention.
+	//		naming convention.
 	if existingKind != nil && !isKind(args.Config, *existingKind, ruleKind) {
 		log.Fatalf(
 			"Attempting to generate rule '%s' in package '%s' of kind '%s', but another "+
@@ -528,6 +528,8 @@ func (l *scalaLang) GenerateRules(args language.GenerateArgs) language.GenerateR
 			Imports: []interface{}{deps, testDeps},
 		}
 
+		// If not, we only have scalaRule to update and return. It may still be either a
+		// a library or a test.
 	} else {
 		isTest := ruleKind == scalaConfig.ScalaTestKind
 
