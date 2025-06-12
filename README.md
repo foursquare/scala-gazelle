@@ -72,6 +72,13 @@ Note that with `WORKSPACE` being order dependent, if you get errors building the
 `scala_gazelle_deps()` earlier in the file to ensure the proper dependency versioning, especially if you use other
 Gazelle language plugins.
 
+## Adopting scala-gazelle in an existing repo
+
+ - remove globs
+ - add resolve directives for conflicts
+ - must refactor to a single library and/or test target per package
+ - may need to rename existing rules, if they conflict with generation conventions
+
 ## Maintainer notes
 
 ### Managing go dependencies

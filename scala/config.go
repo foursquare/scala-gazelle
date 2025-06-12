@@ -299,7 +299,16 @@ func (sc *ScalaConfigurer) Configure(c *config.Config, rel string, f *rule.File)
 			switch d.Key {
 			case ScalaTestFileSuffixes:
 				newSuffixes := strings.Split(d.Value, ",")
-				scalaConfig.ScalaTestFileSuffixes = &newSuffixes
+
+				var filteredSuffixes []string
+				for _, newSuffix := range newSuffixes {
+					newSuffix = strings.TrimSpace(newSuffix)
+					if newSuffix != "" {
+						filteredSuffixes = append(filteredSuffixes, newSuffix)
+					}
+				}
+
+				scalaConfig.ScalaTestFileSuffixes = &filteredSuffixes
 
 			case ScalaTestFramework:
 				kind := ScalaTestFrameworkType(d.Value).Kind()
