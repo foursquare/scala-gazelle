@@ -300,14 +300,15 @@ func (sc *ScalaConfigurer) Configure(c *config.Config, rel string, f *rule.File)
 			case ScalaTestFileSuffixes:
 				newSuffixes := strings.Split(d.Value, ",")
 
-				for i, newSuffix := range newSuffixes {
+				var filteredSuffixes []string
+				for _, newSuffix := range newSuffixes {
 					newSuffix = strings.TrimSpace(newSuffix)
 					if newSuffix != "" {
-						newSuffixes[i] = newSuffix
+						filteredSuffixes = append(filteredSuffixes, newSuffix)
 					}
 				}
 
-				scalaConfig.ScalaTestFileSuffixes = &newSuffixes
+				scalaConfig.ScalaTestFileSuffixes = &filteredSuffixes
 
 			case ScalaTestFramework:
 				kind := ScalaTestFrameworkType(d.Value).Kind()
