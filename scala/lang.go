@@ -2,7 +2,9 @@ package scala
 
 import (
 	"fmt"
+	"io/fs"
 	"log"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -23,15 +25,19 @@ type scalaLang struct {
 	*ScalaConfigurer
 	language.FinishableLanguage
 
-	parser                 parse.Parser[ParseResult]
-	currentExportedSymbols *treeset.Set
+	parser                     parse.Parser[ParseResult]
+	seenScalaPackages          *treeset.Set
+	currentExportedSymbols     *treeset.Set
+	currentTestExportedSymbols *treeset.Set
 }
 
 // NewLanguage is called by Gazelle to install this language extension in a binary.
 func NewLanguage() language.Language {
 	lang := scalaLang{
-		parser:                 nil, // populated during ScalaConfigurer's CheckFlags
-		currentExportedSymbols: nil,
+		parser:                     nil, // populated during ScalaConfigurer's CheckFlags
+		seenScalaPackages:          treeset.NewWithStringComparator(),
+		currentExportedSymbols:     nil,
+		currentTestExportedSymbols: nil,
 	}
 
 	lang.ScalaConfigurer = NewScalaConfigurer(&lang)
@@ -153,6 +159,223 @@ func (l *scalaLang) Loads() []rule.LoadInfo {
 	}
 }
 
+// NOTE(jacob): We don't handle java test files. It's possible we should?
+type srcFiles struct {
+	scalaSrcs     *[]string
+	scalaTestSrcs *[]string
+	javaSrcs      *[]string
+}
+
+func emptySrcFiles() *srcFiles {
+	return &srcFiles{
+		scalaSrcs:     &[]string{},
+		scalaTestSrcs: &[]string{},
+		javaSrcs:      &[]string{},
+	}
+}
+
+func (s *srcFiles) allSrcs(includeTests bool) []string {
+	allSrcs := append(*s.scalaSrcs, *s.javaSrcs...)
+	if includeTests {
+		return append(allSrcs, *s.scalaTestSrcs...)
+	} else {
+		return allSrcs
+	}
+}
+
+func (s *srcFiles) hasScalaFiles() bool {
+	return len(*s.scalaSrcs) > 0 || len(*s.scalaTestSrcs) > 0
+}
+
+func (s *srcFiles) hasScalaSrcs() bool {
+	return len(*s.scalaSrcs) > 0
+}
+
+func (s *srcFiles) hasTests() bool {
+	return len(*s.scalaTestSrcs) > 0
+}
+
+func (s *srcFiles) maybeAddSrc(scalaConfig *ScalaConfig, path string) {
+	pathExt := filepath.Ext(path)
+
+	if pathExt == SCALA_EXT {
+		// Any inferred maven directory layout takes precedence over inferring library vs
+		// test code based on file suffix.
+		if strings.HasPrefix(path, MAVEN_LAYOUT_TEST_PREFIX) {
+			*s.scalaTestSrcs = append(*s.scalaTestSrcs, path)
+		} else if strings.HasPrefix(path, MAVEN_LAYOUT_MAIN_PREFIX) {
+			*s.scalaSrcs = append(*s.scalaSrcs, path)
+		} else if scalaConfig.IsScalaTestFile(path) {
+			*s.scalaTestSrcs = append(*s.scalaTestSrcs, path)
+		} else {
+			*s.scalaSrcs = append(*s.scalaSrcs, path)
+		}
+
+	} else if pathExt == JAVA_EXT {
+		*s.javaSrcs = append(*s.javaSrcs, path)
+	}
+}
+
+func (s *srcFiles) addAll(otherSrcs *srcFiles) {
+	*s.scalaSrcs = append(*s.scalaSrcs, *otherSrcs.scalaSrcs...)
+	*s.scalaTestSrcs = append(*s.scalaTestSrcs, *otherSrcs.scalaTestSrcs...)
+	*s.javaSrcs = append(*s.javaSrcs, *otherSrcs.javaSrcs...)
+}
+
+// isBazelPackage determines if the directory is a Bazel package by probing for
+// the existence of a known BUILD file name.
+func isBazelPackage(dir string) bool {
+	for _, buildFilename := range KNOWN_BUILD_FILENAMES {
+		path := filepath.Join(dir, buildFilename)
+		if _, err := os.Stat(path); err == nil {
+			return true
+		}
+	}
+
+	return false
+}
+
+// Simplified implementation taken from rules_python:
+// https://github.com/bazel-contrib/rules_python/blob/02198f622ee1b496111bef6b880ea35e0d24b600/gazelle/python/generate.go#L149
+func crawlAndFilterSubdirSrcs(
+	scalaConfig *ScalaConfig,
+	parentDir string,
+	subdirs []string,
+) *srcFiles {
+	srcs := emptySrcFiles()
+
+	// boundaryPackages represents child Bazel packages that are used as a
+	// boundary to stop processing under that tree.
+	boundaryPackages := treeset.NewWithStringComparator()
+
+	for _, dir := range subdirs {
+		dirPath := filepath.Join(parentDir, dir)
+
+		err := filepath.WalkDir(
+			dirPath,
+			func(path string, entry fs.DirEntry, err error) error {
+				if err != nil {
+					return err
+				}
+
+				// Ignore the path if it crosses any boundary package. Walking
+				// the tree is still important because subsequent paths can
+				// represent files that have not crossed any boundaries.
+				boundaryPackagesIter := boundaryPackages.Iterator()
+				for boundaryPackagesIter.Next() {
+					boundaryPackage := boundaryPackagesIter.Value().(string)
+					if strings.HasPrefix(path, boundaryPackage) {
+						return nil
+					}
+				}
+
+				if entry.IsDir() {
+					if isBazelPackage(path) {
+						boundaryPackages.Add(path)
+						return fs.SkipDir
+					}
+
+				} else {
+					relPath, err := filepath.Rel(parentDir, path)
+					if err != nil {
+						return err
+					}
+
+					srcs.maybeAddSrc(scalaConfig, relPath)
+				}
+
+				return nil
+			},
+		)
+
+		if err != nil {
+			log.Fatalf("Error while iterating directory %s: %v\n", dirPath, err)
+		}
+	}
+
+	return srcs
+}
+
+func (l *scalaLang) parseFile(absPath string, isTest bool) (*treeset.Set, *treeset.Set) {
+	parseResult, errs := l.parser.ParseFile(absPath)
+
+	if errs != nil && len(errs) != 0 {
+		var b strings.Builder
+		fmt.Fprintf(
+			&b,
+			"ERROR: failed parsing scala file %s\n",
+			absPath,
+		)
+		for _, err := range errs {
+			fmt.Fprintf(&b, "%s\n", err)
+		}
+		log.Fatalf(b.String())
+	}
+
+	deps := treeset.NewWithStringComparator()
+	deps = deps.Union(parseResult.FullyQualifiedNames)
+	deps = deps.Union(parseResult.Imports)
+	if isTest {
+		deps.Add(parseResult.Package)
+	}
+
+	exportedSymbols := treeset.NewWithStringComparator()
+
+	// TODO(jacob): Have our parsers just spit out fully qualified names so we don't
+	//		have to recreate them here.
+	symbolsIter := parseResult.ExportedSymbols.Iterator()
+	for symbolsIter.Next() {
+		symbol := symbolsIter.Value().(string)
+		fullyQualifiedSymbol := fmt.Sprintf("%s.%s", parseResult.Package, symbol)
+		exportedSymbols.Add(fullyQualifiedSymbol)
+	}
+
+	// HACK(jacob): Generally we don't want to index the package of test targets: a
+	//		common pattern in jvm repos is to split source code and tests into separate
+	//		directories which share a package namespace, and if we index the package for
+	//		both of them we would trigger resolve conflicts users would have to manually
+	//		override via '# gazelle:resolve'.
+	//
+	//		However! It isn't always the case that source code and tests share a package
+	//		namespace -- our internal monorepo in fact hard bans split packages, and so
+	//		tests always live in a '.test' sub-package -- and in such cases we do in fact
+	//		want to index the test package to support test on test dependencies and package
+	//		shadowing.
+	//
+	//		This is a tricky impasse to resolve while trying to avoid explicit directive
+	//		configuration from users. The hack used here is simply to keep track of which
+	//		packages we've previously encountered and only index the package of test
+	//		targets if they aren't found.
+	//
+	//		This makes an unseemly assumption about Gazelle traversing directories
+	//		alphabetically, in which case it will process 'src' or 'main' directories
+	//		before 'test' directories. This is not documented behavior --
+	//		https://pkg.go.dev/github.com/bazelbuild/bazel-gazelle@v0.43.0/walk only
+	//		specifies a depth-first, post-order traversal -- but the underlying
+	//		implementation is based around https://pkg.go.dev/os#ReadDir, and so assuming
+	//		1. any directory arguments passed to gazelle are sorted, and 2. symlinks
+	//		affected by any '# gazelle:follow' usage don't break traversal order too badly,
+	//		this is generally the case.
+	//
+	//		In places where this assumption breaks down (one such case is a test package with
+	//		its own build file nested inside a recursive module: we process the child test
+	//		directory before the parent module directory), it may be necessary for users to
+	//		specify '# gazelle:resolve' directives to fix the affected packages manually.
+	//
+	//		A less hacky but more restrictive solution would be to simply ban test on test
+	//		dependencies, which is generally a best practice regardless. However, without
+	//		informative error messages this can lead to confusing behavior for developers
+	//		where Gazelle silently not indexing test rules makes it seem like it isn't
+	//		working correctly. It seems reasonable to go with the hacky approach here and
+	//		revisit if it causes issues in practice.
+	if !isTest || !l.seenScalaPackages.Contains(parseResult.Package) {
+		exportedSymbols.Add(parseResult.Package)
+	}
+	l.seenScalaPackages.Add(parseResult.Package)
+
+	return deps, exportedSymbols
+}
+
 // GenerateRules extracts build metadata from source files in a directory.
 // GenerateRules is called in each directory where an update is requested
 // in depth-first post-order.
@@ -167,15 +390,40 @@ func (l *scalaLang) Loads() []rule.LoadInfo {
 // Any non-fatal errors this function encounters should be logged using
 // log.Print.
 func (l *scalaLang) GenerateRules(args language.GenerateArgs) language.GenerateResult {
-	// TODO(jacob): We currently ignore directories without BUILD files, should we actually
-	//		be recursing into sub-directories to find otherwise orphaned source files? This
-	//		is what, e.g., the Python gazelle plugin does, which corresponds to how Bazel
-	//		thinks about package boundaries.
-	if args.File == nil || args.RegularFiles == nil || len(args.RegularFiles) == 0 {
+	scalaConfig := ScalaConfigForArgs(args)
+
+	if args.File == nil && scalaConfig.InferRecursiveModules {
+		// This directory is not itself a Bazel package and is handled when processing a
+		// parent directory. Nothing to see here.
 		return language.GenerateResult{}
 	}
 
-	scalaConfig := ScalaConfigForArgs(args)
+	srcs := emptySrcFiles()
+	for _, filename := range args.RegularFiles {
+		srcs.maybeAddSrc(scalaConfig, filename)
+	}
+
+	if srcs.hasScalaFiles() && args.File == nil && !scalaConfig.InferRecursiveModules {
+		// TODO(jacob): Generate build files from scratch instead of bailing here
+		log.Fatalf(
+			"Found scala sources in '%s' without an accompanying build file, and gazelle:%s "+
+				"is false. Either add a build file in '%s' or if these sources are meant to "+
+				"belong to a parent directory's build file, it should set '# gazelle:%s true'.",
+			args.Rel,
+			ScalaInferRecursiveModules,
+			args.Rel,
+			ScalaInferRecursiveModules,
+		)
+
+	} else if args.File != nil && scalaConfig.InferRecursiveModules {
+		recursiveSrcs := crawlAndFilterSubdirSrcs(scalaConfig, args.Dir, args.Subdirs)
+		srcs.addAll(recursiveSrcs)
+
+	}
+
+	if !srcs.hasScalaFiles() {
+		return language.GenerateResult{}
+	}
 
 	ruleName := filepath.Base(args.Rel)
 	ruleKind := SCALA_LIB_KIND
@@ -191,97 +439,121 @@ func (l *scalaLang) GenerateRules(args language.GenerateArgs) language.GenerateR
 		}
 	}
 
-	warnedAboutTestConflict := !scalaConfig.WarnTestRuleMismatch
-	scalaSrcs := make([]string, 0, len(args.RegularFiles))
-	allSrcs := make([]string, 0, len(args.RegularFiles))
-	for _, filename := range args.RegularFiles {
-		filepathExt := filepath.Ext(filename)
+	// We expect to generate a single rule, a test rule, if this target is not a recursive
+	// module and has test files or it is a module and only has test files.
+	if !scalaConfig.InferRecursiveModules && srcs.hasTests() ||
+		scalaConfig.InferRecursiveModules && !srcs.hasScalaSrcs() {
+		if existingKind == nil || scalaConfig.IsScalaTestKind(args.Config, *existingKind) {
+			ruleKind = scalaConfig.ScalaTestKind
 
-		if filepathExt == SCALA_EXT {
-			allSrcs = append(allSrcs, filename)
-			scalaSrcs = append(scalaSrcs, filename)
-
-			if scalaConfig.IsScalaTestFile(filename) {
-				if existingKind != nil && !scalaConfig.IsScalaTestKind(args.Config, *existingKind) {
-					if !warnedAboutTestConflict {
-						log.Printf(
-							"WARN: Package '%s' contains a conflicting rule of kind '%s', "+
-								"but appears to also contain test files. If you are adding a "+
-								"new test file, please consider moving it to another directory "+
-								"to avoid mixing library and test code, or manually update the "+
-								"rule to the appropriate test kind so the tests will run. If "+
-								"not, you may consider changing the file names to not match "+
-								"against the configured test file suffixes (%v) or setting "+
-								"'# gazelle:%s false' in its build file to make this warning "+
-								"go away.",
-							args.Rel,
-							*existingKind,
-							*scalaConfig.ScalaTestFileSuffixes,
-							ScalaWarnTestRuleMismatch,
-						)
-						warnedAboutTestConflict = true
-					}
-
-				} else {
-					ruleKind = scalaConfig.ScalaTestKind
-				}
-			}
-
-		} else if filepathExt == JAVA_EXT {
-			allSrcs = append(allSrcs, filename)
+		} else if scalaConfig.WarnTestRuleMismatch {
+			log.Printf(
+				"WARN: Package '%s' contains a conflicting rule of kind '%s', "+
+					"but appears to also contain test files. If you are adding a "+
+					"new test file, please consider moving it to another directory "+
+					"to avoid mixing library and test code, or manually update the "+
+					"rule to the appropriate test kind so the tests will run. If "+
+					"not, you may consider changing the file names to not match "+
+					"against the configured test file suffixes (%v) or setting "+
+					"'# gazelle:%s false' in its build file to make this warning "+
+					"go away.",
+				args.Rel,
+				*existingKind,
+				*scalaConfig.ScalaTestFileSuffixes,
+				ScalaWarnTestRuleMismatch,
+			)
 		}
 	}
 
-	if len(scalaSrcs) == 0 {
-		return language.GenerateResult{}
+	// This check exists to catch cases where existing rules conflict with our expected
+	// naming. For example, a build file might contain a scala_library named 'foo-lib' and
+	// a scala_binary named 'foo'. If we naively try to generate a scala_library named
+	// 'foo', Gazelle will be unable to reconcile the conflict and will silently do
+	// nothing.
+	//
+	// TODO(jacob): There are many cases, such as the example above, where with some effort
+	//		we could identify the correct existing rule to match against and generate our
+	//		rules to match the existing naming rather than force users to conform to our
+	//		naming convention.
+	if existingKind != nil && !isKind(args.Config, *existingKind, ruleKind) {
+		log.Fatalf(
+			"Attempting to generate rule '%s' in package '%s' of kind '%s', but another "+
+				"rule of kind '%s' already exists with that name. If it should stay a separate "+
+				"unrelated rule, please rename it. If it should be matched to the generating "+
+				"rule, please either fix its kind or add missing '# gazelle:map_kind' or "+
+				"'# gazelle:alias_kind' directives if needed.",
+			ruleName,
+			args.Rel,
+			ruleKind,
+			*existingKind,
+		)
 	}
 
-	deps := treeset.NewWithStringComparator()
 	l.currentExportedSymbols = treeset.NewWithStringComparator()
-	for _, filename := range scalaSrcs {
-		absPath := filepath.Join(args.Dir, filename)
-		parseResult, errs := l.parser.ParseFile(absPath)
-
-		if errs != nil && len(errs) != 0 {
-			var b strings.Builder
-			fmt.Fprintf(
-				&b,
-				"ERROR: failed parsing scala file %s\n",
-				absPath,
-			)
-			for _, err := range errs {
-				fmt.Fprintf(&b, "%s\n", err)
-			}
-			log.Fatalf(b.String())
-		}
-
-		deps = deps.Union(parseResult.FullyQualifiedNames)
-		deps = deps.Union(parseResult.Imports)
-
-		// TODO(jacob): Have our parsers just spit out fully qualified names so we don't
-		//		have to recreate them here.
-		symbolsIter := parseResult.ExportedSymbols.Iterator()
-		for symbolsIter.Next() {
-			symbol := symbolsIter.Value().(string)
-			l.currentExportedSymbols.Add(
-				fmt.Sprintf("%s.%s", parseResult.Package, symbol),
-			)
-		}
-
-		l.currentExportedSymbols.Add(parseResult.Package)
-	}
+	l.currentTestExportedSymbols = treeset.NewWithStringComparator()
 
 	scalaRule := rule.NewRule(ruleKind, ruleName)
-	scalaRule.SetAttr("srcs", allSrcs)
 	scalaRule.SetAttr("visibility", DEFAULT_VISIBILITY)
 
-	if ruleKind == SCALA_JUNIT_TEST_KIND {
-		scalaRule.SetAttr("suffixes", *scalaConfig.ScalaTestFileSuffixes)
-	}
+	deps := treeset.NewWithStringComparator()
 
-	return language.GenerateResult{
-		Gen:     []*rule.Rule{scalaRule},
-		Imports: []interface{}{deps},
+	// If we are inferring recursive modules and have both source and test files, we assume
+	// we are generating two rules: one library and one test.
+	if scalaConfig.InferRecursiveModules && srcs.hasScalaSrcs() && srcs.hasTests() {
+		testDeps := treeset.NewWithStringComparator()
+
+		for _, path := range *srcs.scalaSrcs {
+			newDeps, exportedSymbols := l.parseFile(filepath.Join(args.Dir, path), false)
+			deps = deps.Union(newDeps)
+			l.currentExportedSymbols = l.currentExportedSymbols.Union(exportedSymbols)
+		}
+		for _, path := range *srcs.scalaTestSrcs {
+			newDeps, exportedSymbols := l.parseFile(filepath.Join(args.Dir, path), true)
+			testDeps = testDeps.Union(newDeps)
+			l.currentTestExportedSymbols = l.currentTestExportedSymbols.Union(exportedSymbols)
+		}
+
+		scalaRule.SetAttr("srcs", srcs.allSrcs(false))
+
+		scalaTestRule := rule.NewRule(scalaConfig.ScalaTestKind, ruleName+"-tests")
+		scalaTestRule.SetAttr("srcs", *srcs.scalaTestSrcs)
+		scalaTestRule.SetAttr("visibility", DEFAULT_VISIBILITY)
+
+		if scalaConfig.ScalaTestKind == SCALA_JUNIT_TEST_KIND {
+			scalaTestRule.SetAttr("suffixes", *scalaConfig.ScalaTestFileSuffixes)
+		}
+
+		return language.GenerateResult{
+			Gen:     []*rule.Rule{scalaRule, scalaTestRule},
+			Imports: []interface{}{deps, testDeps},
+		}
+
+		// If not, we only have scalaRule to update and return. It may still be either a
+		// a library or a test.
+	} else {
+		isTest := ruleKind == scalaConfig.ScalaTestKind
+
+		for _, path := range *srcs.scalaSrcs {
+			newDeps, exportedSymbols := l.parseFile(filepath.Join(args.Dir, path), isTest)
+			deps = deps.Union(newDeps)
+			l.currentExportedSymbols = l.currentExportedSymbols.Union(exportedSymbols)
+		}
+		for _, path := range *srcs.scalaTestSrcs {
+			newDeps, exportedSymbols := l.parseFile(filepath.Join(args.Dir, path), isTest)
+			deps = deps.Union(newDeps)
+			l.currentExportedSymbols = l.currentExportedSymbols.Union(exportedSymbols)
+		}
+
+		scalaRule.SetAttr("srcs", srcs.allSrcs(true))
+
+		if ruleKind == SCALA_JUNIT_TEST_KIND {
+			scalaRule.SetAttr("suffixes", *scalaConfig.ScalaTestFileSuffixes)
+		}
+
+		return language.GenerateResult{
+			Gen:     []*rule.Rule{scalaRule},
+			Imports: []interface{}{deps},
+		}
 	}
 }
 
@@ -306,6 +578,8 @@ func (l *scalaLang) DoneGeneratingRules() {
 //	this rule define?" Essentially it returns a list of potential imports -- for scala,
 //	this is our parsed set of exported symbols.
 func (l *scalaLang) Imports(c *config.Config, r *rule.Rule, f *rule.File) []resolve.ImportSpec {
+	scalaConfig := ScalaConfigForConfig(c, f.Pkg)
+
 	ruleKind := r.Kind()
 	// TODO(jacob): Ban deps on test rules?
 	if !(ruleKind == SCALA_LIB_KIND ||
@@ -315,13 +589,23 @@ func (l *scalaLang) Imports(c *config.Config, r *rule.Rule, f *rule.File) []reso
 		return nil
 	}
 
-	exportedSymbols := l.currentExportedSymbols
-	l.currentExportedSymbols = nil
-	if exportedSymbols == nil {
+	var exportedSymbols *treeset.Set
+	if scalaConfig.InferRecursiveModules && scalaConfig.IsScalaTestKind(c, ruleKind) {
+		exportedSymbols = l.currentTestExportedSymbols
+		l.currentTestExportedSymbols = nil
+	} else {
+		exportedSymbols = l.currentExportedSymbols
+		l.currentExportedSymbols = nil
+	}
+
+	if exportedSymbols == nil || exportedSymbols.Size() == 0 {
 		log.Printf(
-			"Package '%s' does not have exported symbols available, does it exist and "+
-				"contain Scala source files?\n",
+			"WARN: Rule '%s:%s' does not have exported symbols available, does it exist and "+
+				"contain Scala source files? If it exists inside a recursive module, you may "+
+				"need to set '# gazelle:%s false' in its build file.\n",
 			f.Pkg,
+			r.Name(),
+			ScalaInferRecursiveModules,
 		)
 		return nil
 	}
