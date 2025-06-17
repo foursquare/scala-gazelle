@@ -180,10 +180,6 @@ func ResolveJvmSymbols(
 	deps := treeset.NewWithStringComparator()
 
 	addDep := func(dep string) {
-		if dep[0] != '@' {
-			dep = "@" + dep
-		}
-
 		if !jvmConfig.excludedArtifacts.Contains(dep) {
 			forcedDeps := forcedTransitiveDepsForDep(jvmConfig.ForcedTransitiveDeps, dep)
 			deps = deps.Union(forcedDeps)
