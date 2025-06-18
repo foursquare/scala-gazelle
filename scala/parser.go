@@ -163,13 +163,14 @@ func (p *treeSitterParser) Parse(
 
 			switch nodeI.Type() {
 			case "package_clause":
-				if result.Package != "" {
-					fmt.Fprintf(os.Stderr, "Multiple package declarations found in %s\n", filePath)
-					os.Exit(1)
-				}
-
 				packageChild := getLoneChild(nodeI, "package_identifier")
-				result.Package = readPackageIdentifier(packageChild, sourceCode, false)
+				parsedPackage := readPackageIdentifier(packageChild, sourceCode, false)
+
+				if result.Package != "" {
+					result.Package += "." + parsedPackage
+				} else {
+					result.Package = parsedPackage
+				}
 
 			case "import_declaration":
 				importedSymbols := readImportDeclaration(nodeI, sourceCode)
