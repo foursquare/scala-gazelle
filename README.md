@@ -179,7 +179,8 @@ some effort.
 The plugin aims to be as flexible as possible, however some assumptions are necessary for
 the sake of reducing complexity.
 
-1. Source files live inside a package and contain a `package` declaration.
+1. Source files live inside a single package and contain one or more `package`
+  declarations.
 
 2. Packages are not split across directories, excepting test code which may exist in a
   separate directory from the code it tests and share a package namespace. While the
@@ -217,12 +218,16 @@ These are current shortcomings that ideally would be fixed or supported at some 
 2. The Scala code parser only handles imports at the top level of the source file, and
   will ignore inline imports contained within classes or objects.
 
-3. The plugin does not infer runtime dependencies (e.g. class loading via reflection).
+3. All imports are treated as absolute whether or not they are prefixed with `_root_`.
+  Relative imports will either not resolve, or may mis-resolve to an incorrect
+  dependency (`# gazelle:resolve` directives may help here).
 
-4. There is no support currently for generating binary rules when `main` methods are
+4. The plugin does not infer runtime dependencies (e.g. class loading via reflection).
+
+5. There is no support currently for generating binary rules when `main` methods are
   encountered.
 
-5. The plugin is not able to merge generated rules with existing rules containing `srcs`
+6. The plugin is not able to merge generated rules with existing rules containing `srcs`
   defined via `glob()`.
 
 ## Adopting scala-gazelle in an existing repo
