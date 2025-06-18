@@ -1,0 +1,42 @@
+{
+    "source": "testdata/parser_integration/fsqio/Query.scala",
+    "imports": [
+        "com.mongodb.BasicDBObjectBuilder",
+        "com.mongodb.DBObject",
+        "com.mongodb.ReadPreference",
+        "io.fsq.rogue.MongoHelpers.AndCondition",
+        "io.fsq.rogue.MongoHelpers.MongoBuilder",
+        "io.fsq.rogue.MongoHelpers.MongoModify",
+        "io.fsq.rogue.MongoHelpers.MongoOrder",
+        "io.fsq.rogue.MongoHelpers.MongoSelect",
+        "io.fsq.rogue.index.MongoIndex"
+    ],
+    "package": "io.fsq.rogue",
+    "fully_qualified_names": [
+        "MongoBuilder.buildCondition",
+        "MongoBuilder.buildFindAndModifyString",
+        "MongoBuilder.buildModify",
+        "MongoBuilder.buildModifyString",
+        "MongoBuilder.buildQueryString",
+        "MongoBuilder.buildSignature",
+        "QueryHelpers.orConditionFromQueries",
+        "condition.clauses",
+        "condition.copy",
+        "mod.clauses",
+        "newClause.expectedIndexBehavior",
+        "order.get.terms",
+        "query.collectionName",
+        "query.meta",
+        "subqueries.toList.map",
+        "this.asInstanceOf",
+        "this.condition",
+        "this.copy",
+        "this.mod",
+        "this.query.asDBObject"
+    ],
+    "symbols": [
+        "FindAndModifyQuery",
+        "ModifyQuery",
+        "Query"
+    ]
+}
