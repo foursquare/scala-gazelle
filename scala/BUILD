@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 
 go_library(
     name = "scala",
@@ -30,4 +30,16 @@ go_binary(
     srcs = ["main.go"],
     visibility = ["//visibility:public"],
     deps = [":scala"],
+)
+
+go_test(
+    name = "scala_test",
+    size = "small",
+    srcs = ["parser_test.go"],
+    data = glob(["testdata/**"]),
+    embed = [":scala"],
+    deps = [
+        "//parse",
+        "@com_github_stretchr_testify//require",
+    ],
 )

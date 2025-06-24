@@ -71,10 +71,22 @@ def scala_gazelle_deps():
         version = "v0.0.0-20240827094217-dd81d9e9be82",
     )
     go_repository(
+        name = "com_github_stretchr_objx",
+        importpath = "github.com/stretchr/objx",
+        sum = "h1:xuMeJ0Sdp5ZMRXx/aWO6RZxdr3beISkG5/G/aIRr3pY=",
+        version = "v0.5.2",
+    )
+    go_repository(
         name = "com_github_stretchr_testify",
         importpath = "github.com/stretchr/testify",
         sum = "h1:HtqpIVDClZ4nwg75+f6Lvsy/wHu+3BoSGCbBAcpTsTg=",
         version = "v1.9.0",
+    )
+    go_repository(
+        name = "in_gopkg_check_v1",
+        importpath = "gopkg.in/check.v1",
+        sum = "h1:yhCVgyC4o1eVCa2tZl7eS0r+SDo693bJlVdllGtEeKM=",
+        version = "v0.0.0-20161208181325-20d25e280405",
     )
     go_repository(
         name = "in_gopkg_yaml_v3",
