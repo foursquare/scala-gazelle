@@ -1,0 +1,8 @@
+load("@rules_scala//scala:scala.bzl", "scala_library")
+
+scala_library(
+    name = "subpackage",
+    srcs = ["HelloHelper.scala"],
+    visibility = ["//:__subpackages__"],
+    deps = ["//example_module/src/main/scala/com/example/library1"],
+)

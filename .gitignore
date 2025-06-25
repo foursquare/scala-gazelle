@@ -13,6 +13,7 @@
 
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
+!BUILD.out
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
@@ -30,3 +31,5 @@ go.work.sum
 # other bazel things
 /bazel-*
 /MODULE.bazel.lock
+
+.DS_Store

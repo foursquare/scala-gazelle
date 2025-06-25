@@ -1,0 +1,63 @@
+{
+  "artifacts": {
+    "com.fasterxml.jackson.core:jackson-databind": {
+      "shasums": {
+        "jar": "6444bf08d8cd4629740afc3db1276938f494728deb663ce585c4e91f6b45eb84",
+        "sources": "9f6454486d8ad2830791ff272060f30005a37f5debc7df58f735e2c51509f41c"
+      },
+      "version": "2.13.3"
+    },
+    "com.fasterxml.jackson.module:jackson-module-scala_2.12": {
+      "shasums": {
+        "jar": "cecc76b3e5344027162adac1ff851d785536db6d6b0bf6336c2caaa89522c059",
+        "sources": "d413ca4f4a0a300dfdf4f73a2efdcf73f205f69f86147e07d2596588dcc1f8bc"
+      },
+      "version": "2.13.3"
+    },
+    "org.scalatest:scalatest-funsuite_2.12": {
+      "shasums": {
+        "jar": "9a4605c1258203426e445fbf9fdf8378518e2b1ae6f537c8af0766c719ff3d0b",
+        "sources": "819f03f9ec4ac1dc134fcaaae52726a6e1ea62ad46785ad980641a20c16d29e8"
+      },
+      "version": "3.2.16"
+    }
+  },
+  "packages": {
+    "com.fasterxml.jackson.core:jackson-databind": [
+      "com.fasterxml.jackson.databind",
+      "com.fasterxml.jackson.databind.annotation",
+      "com.fasterxml.jackson.databind.cfg",
+      "com.fasterxml.jackson.databind.deser",
+      "com.fasterxml.jackson.databind.deser.impl",
+      "com.fasterxml.jackson.databind.deser.std",
+      "com.fasterxml.jackson.databind.exc",
+      "com.fasterxml.jackson.databind.ext",
+      "com.fasterxml.jackson.databind.introspect",
+      "com.fasterxml.jackson.databind.jdk14",
+      "com.fasterxml.jackson.databind.json",
+      "com.fasterxml.jackson.databind.jsonFormatVisitors",
+      "com.fasterxml.jackson.databind.jsonschema",
+      "com.fasterxml.jackson.databind.jsontype",
+      "com.fasterxml.jackson.databind.jsontype.impl",
+      "com.fasterxml.jackson.databind.module",
+      "com.fasterxml.jackson.databind.node",
+      "com.fasterxml.jackson.databind.ser",
+      "com.fasterxml.jackson.databind.ser.impl",
+      "com.fasterxml.jackson.databind.ser.std",
+      "com.fasterxml.jackson.databind.type",
+      "com.fasterxml.jackson.databind.util"
+    ],
+    "com.fasterxml.jackson.module:jackson-module-scala_2.12": [
+      "com.fasterxml.jackson.module.scala",
+      "com.fasterxml.jackson.module.scala.deser",
+      "com.fasterxml.jackson.module.scala.experimental",
+      "com.fasterxml.jackson.module.scala.introspect",
+      "com.fasterxml.jackson.module.scala.modifiers",
+      "com.fasterxml.jackson.module.scala.ser",
+      "com.fasterxml.jackson.module.scala.util"
+    ],
+    "org.scalatest:scalatest-funsuite_2.12": [
+      "org.scalatest.funsuite"
+    ]
+  }
+}

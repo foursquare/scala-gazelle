@@ -1,0 +1,32 @@
+load("@rules_scala//scala:scala.bzl", "scala_library", "scala_test")
+
+# gazelle:scala_infer_recursive_modules true
+
+scala_library(
+    name = "example_module",
+    srcs = [
+        "src/main/scala/com/example/binary/HelloRunner.scala",
+        "src/main/scala/com/example/library1/Hello.scala",
+        "src/main/scala/com/example/library1/subpackage/HelloHelper.scala",
+        "src/main/scala/com/example/library2/HelloJsonHelper.scala",
+        "src/main/scala/com/example/library2/HelloJsonMessage.scala",
+    ],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@maven//:com_fasterxml_jackson_core_jackson_databind",
+        "@maven//:com_fasterxml_jackson_module_jackson_module_scala_2_12",
+    ],
+)
+
+scala_test(
+    name = "example_module-tests",
+    srcs = [
+        "src/test/scala/com/example/library1/subpackage/HelloHelperTest.scala",
+        "src/test/scala/com/example/library2/test/HelloJsonHelperTest.scala",
+    ],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//example_module",
+        "@maven//:org_scalatest_scalatest_funsuite_2_12",
+    ],
+)

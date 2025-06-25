@@ -1,0 +1,11 @@
+load("@rules_scala//scala:scala.bzl", "scala_test")
+
+scala_test(
+    name = "subpackage",
+    srcs = ["HelloHelperTest.scala"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//example_module/src/main/scala/com/example/library1/subpackage",
+        "@maven//:org_scalatest_scalatest_funsuite_2_12",
+    ],
+)
