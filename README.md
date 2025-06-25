@@ -216,6 +216,9 @@ parsing library it uses does support Scala 3, it is very likely the plugin itsel
 erroneous output when run over a Scala 3 codebase. In such cases, it may be possible to work around bugs via
 `#gazelle:ignore` and `#gazelle:resolve` directives with some effort.
 
+Full in-repo test coverage of the Scala parser and Gazelle plugin here is a work in progress. See the testing readme
+[here](/scala/testdata).
+
 ### Restrictions
 
 The plugin aims to be as flexible as possible, however some assumptions are necessary for the sake of reducing
