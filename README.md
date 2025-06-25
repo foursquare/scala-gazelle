@@ -269,10 +269,30 @@ These are current shortcomings that ideally would be fixed or supported at some 
 
 ## Adopting scala-gazelle in an existing repo
 
- - remove globs in existing rules (setting source lists to `[]` is fine)
- - refactor to a single library and/or test target per package
- - may need to rename existing rules, if they conflict with generation conventions
- - add resolve directives for conflicts
+Adoption of the plugin in an existing repo can be a tedious process, though it tries to provide helpful error messages
+where it can. Roughly speaking, required changes boil down to:
+
+ - Remove globs in existing rules (setting source lists to `[]` is fine)
+   - Something like `for file in $(git grep -l 'srcs = glob(\["\*\.scala"\]),'); do sed -i '' 's/srcs = glob(\["\*\.scala"\]),/srcs = [],/' $file; done`
+     may be useful to automate this.
+ - Refactor to a single library and/or test rule per package (build file).
+ - Rename existing rules, if they conflict with generation conventions.
+   - If conflicting rules exist, the plugin should detect this and fail with a message asking you to rename the rule in
+     question.
+ - Add resolve or exclude directives to fix duplicate package or symbol definitions.
+   - This is most common with external jars or in-repo code with split packages (e.g. some Hadoop and Spark libraries).
+     In such cases, the plugin will output an error message noting the symbol in question and what providing targets
+     were found containing it.
+   - Note the right fix for conflicts here often requires a judgement call. Sometimes the solution is to simply add a
+     `# gazelle:java_exclude_artifact` directive for one of the providing targets if it should never be chosen as a
+     direct dependency. Sometimes it will require knowing specifically what classes an external jar contains or when
+     one jar should be chosen over another. Usually the fix is somewhat obvious, especially if you can compare against
+     which providing target the existing build rules in your repo are using.
+
+Note it may be helpful to utilize the `# gazelle:exclude` directive to allow more a more iterative setup process,
+focusing on smaller or more self-contained sections of the repo first while utilizing `# gazelle:resolve` directives to
+map packages outside the managed scope. This may not be feasible in large repos with highly connected dependency graphs
+however.
 
 ## Maintainer notes
 
