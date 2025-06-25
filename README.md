@@ -90,6 +90,7 @@ If following the installation steps above, `bazel run //:gazelle` will run Gazel
 ### Command line flags
 
 | *Flag* | *Default Value* |
+| ------ | --------------- |
 
 | `--scala_cross_resolve_langs` | none |
 | When specified, indicates which languages the scala language plugin should attempt to CrossResolve imports for.
