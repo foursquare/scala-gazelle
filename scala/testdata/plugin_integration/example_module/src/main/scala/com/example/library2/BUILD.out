@@ -1,0 +1,16 @@
+load("@rules_scala//scala:scala.bzl", "scala_library")
+
+scala_library(
+    name = "library2",
+    srcs = [
+        "HelloJsonHelper.scala",
+        "HelloJsonMessage.scala",
+    ],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//example_module/src/main/scala/com/example/library1",
+        "//example_module/src/main/scala/com/example/library1/subpackage",
+        "@maven//:com_fasterxml_jackson_core_jackson_databind",
+        "@maven//:com_fasterxml_jackson_module_jackson_module_scala_2_12",
+    ],
+)
