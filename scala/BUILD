@@ -36,7 +36,7 @@ go_test(
     name = "scala_test",
     size = "small",
     srcs = ["parser_test.go"],
-    data = glob(["testdata/**"]),
+    data = ["//scala/testdata/parser_integration"],
     embed = [":scala"],
     deps = [
         "//parse",
