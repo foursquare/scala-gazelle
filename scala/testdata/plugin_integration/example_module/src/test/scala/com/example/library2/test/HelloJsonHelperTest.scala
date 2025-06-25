@@ -6,6 +6,6 @@ import org.scalatest.funsuite.AnyFunSuite
 class HelloJsonHelperTest extends AnyFunSuite {
   test("does hello") {
     val helper = new HelloJsonHelper
-    assert(helper.hello("jacob") === """hello: {"hello": "jacob"}""")
+    assert(helper.hello("jacob") === """hello: {"hello":"jacob"}""")
   }
 }
