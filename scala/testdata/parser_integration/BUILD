@@ -1,5 +1,5 @@
 filegroup(
     name = "parser_integration",
     srcs = glob(["**"]),
-    visibility = ["//:__subpackages__"],
+    visibility = ["//scala:__subpackages__"],
 )
