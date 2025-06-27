@@ -41,14 +41,20 @@ gazelle(
 
 ### Bzlmod
 
-TODO: scala_gazelle is not currently published to the Bazel Central Registry. In the meantime, Bzlmod can still be used
-via the --override_module flag.
+TODO: scala_gazelle is not currently published to the Bazel Central Registry and currently requires an
+`archive_override` to consume via Bzlmod:
 
 ```starlark
 bazel_dep(name = "scala_gazelle", version = "0.0.0")
+archive_override(
+    module_name = "scala_gazelle",
+    integrity = "sha256-aC5OoUd6NSO2KkLmtfQHV5xJbPnw+iSaursZ4BCjyXs=",
+    strip_prefix = "scala-gazelle-fa55ff133d76bd0053d29e06cb9b89d8a2a7b710",
+    urls = ["https://github.com/foursquare/scala-gazelle/archive/fa55ff133d76bd0053d29e06cb9b89d8a2a7b710.zip"],
+)
 ```
 
-Note that building scala_gazelle requires either a rules_go version later than 54.1, or a patch to the go-tree-sitter
+Note that building scala_gazelle requires either rules_go version 55.0 or later, or a patch to the go-tree-sitter
 module. If upgrading rules_go is not an option for you, you will additionally require the following override in your
 `MODULE.bazel` file:
 
@@ -63,15 +69,11 @@ go_deps.module_override(
 ### WORKSPACE
 
 ```starlark
-SCALA_GAZELLE_VERSION = "fd9ef55674f961f05f339ca576027f706b0f3859"
-
-SCALA_GAZELLE_SHA = "b45ce08742058431f20326cbfe59d240a1f4a644733bfd273f4c35865013b795"
-
 http_archive(
     name = "scala_gazelle",
-    strip_prefix = "scala-gazelle-{}".format(SCALA_GAZELLE_VERSION),
-    sha256 = SCALA_GAZELLE_SHA,
-    url = "https://github.com/foursquare/scala-gazelle/archive/{}.zip".format(SCALA_GAZELLE_VERSION),
+    sha256 = "682e4ea1477a3523b62a42e6b5f407579c496cf9f0fa249ababb19e010a3c97b",
+    strip_prefix = "scala-gazelle-fa55ff133d76bd0053d29e06cb9b89d8a2a7b710",
+    url = "https://github.com/foursquare/scala-gazelle/archive/fa55ff133d76bd0053d29e06cb9b89d8a2a7b710.zip",
 )
 
 load("@scala_gazelle//:deps.bzl", "scala_gazelle_deps")
