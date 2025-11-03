@@ -48,9 +48,9 @@ TODO: scala_gazelle is not currently published to the Bazel Central Registry and
 bazel_dep(name = "scala_gazelle", version = "0.0.0")
 archive_override(
     module_name = "scala_gazelle",
-    integrity = "sha256-aC5OoUd6NSO2KkLmtfQHV5xJbPnw+iSaursZ4BCjyXs=",
-    strip_prefix = "scala-gazelle-fa55ff133d76bd0053d29e06cb9b89d8a2a7b710",
-    urls = ["https://github.com/foursquare/scala-gazelle/archive/fa55ff133d76bd0053d29e06cb9b89d8a2a7b710.zip"],
+    integrity = "sha256-/vzREre9dQDEyOWap49Ki+tc1/eEVWRPSzY4q/kIh+g=",
+    strip_prefix = "scala-gazelle-c8d5b376b65724ca3d473af7f171a114a7e19585",
+    urls = ["https://github.com/foursquare/scala-gazelle/archive/c8d5b376b65724ca3d473af7f171a114a7e19585.zip"],
 )
 ```
 
@@ -71,9 +71,9 @@ go_deps.module_override(
 ```starlark
 http_archive(
     name = "scala_gazelle",
-    sha256 = "682e4ea1477a3523b62a42e6b5f407579c496cf9f0fa249ababb19e010a3c97b",
-    strip_prefix = "scala-gazelle-fa55ff133d76bd0053d29e06cb9b89d8a2a7b710",
-    url = "https://github.com/foursquare/scala-gazelle/archive/fa55ff133d76bd0053d29e06cb9b89d8a2a7b710.zip",
+    sha256 = "fefcd112b7bd7500c4c8e59aa78f4a8beb5cd7f78455644f4b3638abf90887e8",
+    strip_prefix = "scala-gazelle-c8d5b376b65724ca3d473af7f171a114a7e19585",
+    url = "https://github.com/foursquare/scala-gazelle/archive/c8d5b376b65724ca3d473af7f171a114a7e19585.zip",
 )
 
 load("@scala_gazelle//:deps.bzl", "scala_gazelle_deps")
